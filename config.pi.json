@@ -1,0 +1,32 @@
+{
+    "token": "YOUR_DISCORD_BOT_TOKEN",
+    "clientId": "YOUR_DISCORD_APPLICATION_ID",
+    "ownerId": "YOUR_DISCORD_USER_ID",
+    "prefix": "!",
+    "spotify": {
+        "clientId": "YOUR_SPOTIFY_CLIENT_ID",
+        "clientSecret": "YOUR_SPOTIFY_CLIENT_SECRET"
+    },
+    "settings": {
+        "autoDisconnectTimeout": 300000,
+        "maxQueueSize": 50,
+        "defaultVolume": 40,
+        "allowExplicit": true,
+        "leaveOnEmpty": true,
+        "leaveOnEmptyCooldown": 30000,
+        "leaveOnEnd": true,
+        "leaveOnEndCooldown": 30000
+    },
+    "admin": {
+        "port": 3000,
+        "enabled": true
+    },
+    "pi": {
+        "optimized": true,
+        "maxMemoryUsage": "512MB",
+        "cpuThrottle": true,
+        "audioBufferSize": 1024,
+        "lowLatencyMode": true,
+        "enableGpuAcceleration": false
+    }
+}

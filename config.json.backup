@@ -1,0 +1,6 @@
+{
+    "token": "YOUR TOKEN",
+    "prefix": "!",
+    "ownerId": "OWNER ID",
+    "autoDisconnectTimeout": 300000
+}

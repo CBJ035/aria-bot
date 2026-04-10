@@ -1,0 +1,56 @@
+{
+  "name": "aria-bot",
+  "version": "3.0.0",
+  "description": "A modern Discord music bot with YouTube and Spotify integration - optimized for local hosting",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:bg": "node scripts/daemon.js",
+    "stop": "./scripts/stop.sh",
+    "restart": "npm run stop && sleep 2 && npm run start:bg",
+    "dev": "nodemon src/index.js",
+    "admin": "node admin/panel.js",
+    "deploy": "node scripts/deploy.js",
+    "test": "node scripts/test.js",
+    "setup": "node scripts/setup.js",
+    "install-service": "node scripts/install-service.js",
+    "uninstall-service": "node scripts/uninstall-service.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "music",
+    "youtube",
+    "spotify",
+    "raspberry-pi",
+    "local-hosting"
+  ],
+  "author": "Chris",
+  "license": "MIT",
+  "dependencies": {
+    "@discord-player/extractor": "^7.1.0",
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.17.0",
+    "chalk": "^5.3.0",
+    "discord-player": "^6.6.6",
+    "discord-player-youtubei": "^1.5.0",
+    "discord.js": "^14.14.1",
+    "express": "^4.18.2",
+    "ffmpeg-static": "^5.2.0",
+    "figlet": "^1.7.0",
+    "inquirer": "^9.2.12",
+    "node-cron": "^3.0.3",
+    "play-dl": "^1.9.7",
+    "prism-media": "^1.3.5",
+    "socket.io": "^4.7.4",
+    "spotify-web-api-node": "^5.0.2",
+    "ytdl-core": "^4.11.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

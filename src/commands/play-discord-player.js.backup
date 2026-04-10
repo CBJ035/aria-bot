@@ -1,0 +1,399 @@
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { useMainPlayer, QueryType } from 'discord-player';
+import SpotifyService from '../services/SpotifyService.js';
+
+export default {
+    data: new SlashCommandBuilder()
+        .setName('play')
+        .setDescription('Play a song or add it to the queue')
+        .addStringOption(option =>
+            option.setName('query')
+                .setDescription('Song name, YouTube/Spotify URL, or playlist to play')
+                .setRequired(true)
+        ),
+    
+    cooldown: 3,
+    
+    async execute(interaction, client) {
+        // Check if interaction is still valid
+        if (!interaction.isRepliable()) {
+            console.log('❌ Interaction is no longer repliable');
+            return;
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        
+        const player = useMainPlayer();
+        const query = interaction.options.getString('query', true);
+        const channel = interaction.member.voice.channel;
+        
+        // Check if it's a Spotify URL and handle it specially
+        if (SpotifyService.isSpotifyUrl(query)) {
+            return await this.handleSpotifyUrl(interaction, player, query, channel);
+        }
+        
+        try {
+            // Get or create queue first
+            let queue = player.nodes.get(interaction.guildId);
+            if (!queue) {
+                queue = player.nodes.create(interaction.guild, {
+                    metadata: {
+                        channel: interaction.channel,
+                        client: interaction.guild.members.me,
+                        requestedBy: interaction.user,
+                        silent: true
+                    },
+                    volume: client.config?.settings?.defaultVolume || 50,
+                    leaveOnEmpty: client.config?.settings?.leaveOnEmpty ?? true,
+                    leaveOnEmptyCooldown: client.config?.settings?.leaveOnEmptyCooldown || 30000,
+                    leaveOnEnd: client.config?.settings?.leaveOnEnd ?? true,
+                    leaveOnEndCooldown: client.config?.settings?.leaveOnEndCooldown || 30000,
+                    bufferingTimeout: 15000,
+                    connectionTimeout: 30000
+                });
+            }
+
+            // Connect to voice channel with proper configuration
+            if (!queue.connection) {
+                try {
+                    await queue.connect(channel, {
+                        deaf: true,
+                        maxTime: 0 // Don't auto-disconnect
+                    });
+                    console.log('✅ Connected to voice channel');
+                } catch (connectionError) {
+                    console.log('❌ Voice connection failed:', connectionError.message);
+                    const embed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('❌ Connection Error')
+                        .setDescription('Failed to connect to voice channel. Please try again.')
+                        .setTimestamp();
+                    
+                    return interaction.editReply({ embeds: [embed] });
+                }
+            }
+
+            // Search for the track using play-dl
+            console.log(`🔍 Searching for: ${query}`);
+            
+            let searchResult;
+            try {
+                // Direct search with play-dl priority
+                searchResult = await player.search(query, {
+                    requestedBy: interaction.user,
+                    searchEngine: 'youtube'
+                });
+                console.log(`Search result:`, searchResult?.tracks?.length || 0, 'tracks');
+                
+                if (searchResult?.tracks?.length > 0) {
+                    console.log(`First track: ${searchResult.tracks[0].title}`);
+                    console.log(`Track URL: ${searchResult.tracks[0].url}`);
+                    console.log(`Track duration: ${searchResult.tracks[0].duration}`);
+                }
+            } catch (error) {
+                console.log('Search failed:', error.message);
+            }
+
+            if (!searchResult || !searchResult.tracks.length) {
+                // Show available extractors for debugging
+                const extractors = player.extractors.cache.map(ext => ext.identifier).join(', ');
+                console.log('Available extractors:', extractors);
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ No Results')
+                    .setDescription(`No results found for: **${query}**\n\nAvailable extractors: ${extractors}`)
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            // Use the original discord-player.play() method instead of manual queue management
+            console.log('🎵 Using direct player.play() method...');
+            
+            try {
+                const result = await player.play(channel, searchResult.tracks[0], {
+                    nodeOptions: {
+                        metadata: {
+                            channel: interaction.channel,
+                            client: interaction.guild.members.me,
+                            requestedBy: interaction.user,
+                            silent: true
+                        },
+                        volume: client.config?.settings?.defaultVolume || 50,
+                        leaveOnEmpty: false,
+                        leaveOnEmptyCooldown: 300000,
+                        leaveOnEnd: false,
+                        leaveOnEndCooldown: 300000,
+                        bufferingTimeout: 30000,
+                        connectionTimeout: 60000
+                    }
+                });
+                
+                console.log('✅ Player.play() result:', result.track ? 'success' : 'failed');
+                
+                const track = result.track;
+                const queue = player.nodes.get(interaction.guildId);
+                
+                // Wait a moment for the player state to update
+                setTimeout(async () => {
+                    console.log('=== DELAYED STATE CHECK ===');
+                    console.log('- Queue size:', queue.tracks.size);
+                    console.log('- Current track:', queue.currentTrack ? queue.currentTrack.title : 'null');
+                    console.log('- Is playing:', queue.node.isPlaying());
+                    console.log('- Is paused:', queue.node.isPaused());
+                    console.log('- Connection:', queue.connection?.state?.status);
+                    console.log('- Audio resource:', queue.connection?.state?.resource ? 'exists' : 'null');
+                }, 2000);
+                
+                // Show success embed immediately
+                const embed = new EmbedBuilder()
+                    .setColor('#00ff41')
+                    .setTitle('🎶 Now Playing')
+                    .setDescription(`**${track.title}**`)
+                    .setThumbnail(track.thumbnail)
+                    .addFields(
+                        { name: 'Duration', value: track.duration, inline: true },
+                        { name: 'Requested by', value: interaction.user.toString(), inline: true },
+                        { name: 'Volume', value: `${queue.node.volume}%`, inline: true }
+                    )
+                    .setFooter({ text: `Today at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
+                
+            } catch (playError) {
+                console.log('❌ Direct player.play() failed:', playError.message);
+                
+                // Show error embed
+                const embed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Playback Error')
+                    .setDescription('Could not play the requested song. Please try again.')
+                    .addFields(
+                        { name: '🔍 Search Query', value: `\`${query}\``, inline: false },
+                        { name: '💡 Error', value: playError.message, inline: false }
+                    )
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
+            }
+
+        } catch (error) {
+            console.error('Play command error:', error);
+            
+            // Check if we can still respond
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply().catch(() => {});
+            }
+            
+            const embed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Playback Error')
+                .setDescription('Could not play the requested song. Please try again with a different query.')
+                .addFields(
+                    { name: '🔍 Search Query', value: `\`${query}\``, inline: false },
+                    { name: '💡 Tips', value: '• Try searching with song name and artist\n• Make sure the URL is valid\n• Check if the content is available in your region', inline: false }
+                )
+                .setTimestamp();
+
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply({ embeds: [embed] });
+                } else {
+                    await interaction.reply({ embeds: [embed] });
+                }
+            } catch (replyError) {
+                console.error('Failed to send error message:', replyError);
+            }
+        }
+    },
+
+    async handleSpotifyUrl(interaction, player, url, channel) {
+        if (!SpotifyService.isAuthenticated) {
+            const embed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Spotify Not Available')
+                .setDescription('Spotify integration is not configured. Please check the bot configuration.')
+                .setTimestamp();
+            
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        const parsed = SpotifyService.parseSpotifyUrl(url);
+        if (!parsed) {
+            const embed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Invalid Spotify URL')
+                .setDescription('Could not parse the Spotify URL.')
+                .setTimestamp();
+            
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        try {
+            let searchQueries = [];
+            let embedTitle = '';
+            let embedDescription = '';
+            let thumbnailUrl = '';
+            
+            if (parsed.type === 'track') {
+                const track = await SpotifyService.getTrack(parsed.id);
+                if (track) {
+                    searchQueries = [track.searchQuery];
+                    embedTitle = '🎵 Playing Spotify Track';
+                    embedDescription = `**${track.name}** by ${track.artists.join(', ')}`;
+                    thumbnailUrl = track.image;
+                }
+            } else if (parsed.type === 'album') {
+                const album = await SpotifyService.getAlbum(parsed.id);
+                if (album) {
+                    searchQueries = album.tracks.slice(0, 50).map(track => track.searchQuery); // Limit to 50 tracks
+                    embedTitle = '💿 Playing Spotify Album';
+                    embedDescription = `**${album.name}** by ${album.artists.join(', ')}\\n${Math.min(album.totalTracks, 50)} tracks`;
+                    thumbnailUrl = album.image;
+                }
+            } else if (parsed.type === 'playlist') {
+                const playlist = await SpotifyService.getPlaylist(parsed.id);
+                if (playlist) {
+                    searchQueries = playlist.tracks.slice(0, 50).map(track => track.searchQuery); // Limit to 50 tracks
+                    embedTitle = '📋 Playing Spotify Playlist';
+                    embedDescription = `**${playlist.name}** by ${playlist.owner}\\n${Math.min(playlist.totalTracks, 50)} tracks`;
+                    thumbnailUrl = playlist.image;
+                }
+            }
+
+            if (searchQueries.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Error')
+                    .setDescription('Could not fetch data from Spotify or the content is empty.')
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            // Play the first track or multiple tracks
+            if (searchQueries.length === 1) {
+                const { track } = await player.play(channel, searchQueries[0], {
+                    nodeOptions: {
+                        metadata: {
+                            channel: interaction.channel,
+                            client: interaction.guild.members.me,
+                            requestedBy: interaction.user,
+                            silent: true
+                        },
+                        volume: 50,
+                        leaveOnEmpty: true,
+                        leaveOnEmptyCooldown: 30000,
+                        leaveOnEnd: true,
+                        leaveOnEndCooldown: 30000,
+                        bufferingTimeout: 15000,
+                        connectionTimeout: 30000
+                    }
+                });
+
+                const queue = player.nodes.get(interaction.guildId);
+
+                const embed = new EmbedBuilder()
+                    .setColor('#1db954')
+                    .setTitle(embedTitle)
+                    .setDescription(embedDescription)
+                    .setThumbnail(thumbnailUrl || track.thumbnail)
+                    .addFields(
+                        { name: '⏱️ Duration', value: track.duration, inline: true },
+                        { name: '📍 Position', value: queue.currentTrack ? `${queue.tracks.size + 1}` : 'Now Playing', inline: true },
+                        { name: '👤 Requested by', value: interaction.user.toString(), inline: true }
+                    )
+                    .setFooter({ text: 'Powered by Spotify' })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
+            } else {
+                // Add multiple tracks to queue
+                let addedCount = 0;
+                let firstTrack = null;
+                
+                // Update interaction with progress
+                const progressEmbed = new EmbedBuilder()
+                    .setColor('#1db954')
+                    .setTitle('🔄 Loading Spotify Content...')
+                    .setDescription(`Processing ${searchQueries.length} tracks from Spotify...`)
+                    .setThumbnail(thumbnailUrl)
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [progressEmbed] });
+                
+                for (const [index, query] of searchQueries.entries()) {
+                    try {
+                        const result = await player.play(channel, query, {
+                            nodeOptions: {
+                                metadata: {
+                                    channel: interaction.channel,
+                                    client: interaction.guild.members.me,
+                                    requestedBy: interaction.user,
+                                    silent: true // Don't spam notifications
+                                },
+                                volume: 50,
+                                leaveOnEmpty: true,
+                                leaveOnEmptyCooldown: 30000,
+                                leaveOnEnd: true,
+                                leaveOnEndCooldown: 30000,
+                                bufferingTimeout: 15000,
+                                connectionTimeout: 30000
+                            }
+                        });
+                        
+                        if (index === 0) firstTrack = result.track;
+                        addedCount++;
+                        
+                        // Update progress every 10 tracks
+                        if (addedCount % 10 === 0) {
+                            const updateEmbed = new EmbedBuilder()
+                                .setColor('#1db954')
+                                .setTitle('🔄 Loading Spotify Content...')
+                                .setDescription(`Added ${addedCount}/${searchQueries.length} tracks...`)
+                                .setThumbnail(thumbnailUrl)
+                                .setTimestamp();
+                            
+                            await interaction.editReply({ embeds: [updateEmbed] });
+                        }
+                    } catch (error) {
+                        console.log(`Failed to add track: ${query}`);
+                    }
+                }
+
+                const queue = player.nodes.get(interaction.guildId);
+
+                const embed = new EmbedBuilder()
+                    .setColor('#1db954')
+                    .setTitle(embedTitle)
+                    .setDescription(embedDescription)
+                    .setThumbnail(thumbnailUrl || firstTrack?.thumbnail)
+                    .addFields(
+                        { name: '✅ Added to Queue', value: `${addedCount} tracks`, inline: true },
+                        { name: '📊 Queue Status', value: `${queue.tracks.size} tracks total`, inline: true },
+                        { name: '👤 Requested by', value: interaction.user.toString(), inline: true }
+                    )
+                    .setFooter({ text: 'Powered by Spotify' })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
+            }
+
+        } catch (error) {
+            console.error('Spotify play error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Playback Error')
+                .setDescription('Could not play the Spotify content. The tracks might not be available on YouTube.')
+                .addFields(
+                    { name: '💡 Tips', value: '• Some tracks may not be available on YouTube\\n• Try a different playlist or album\\n• Check if the Spotify link is public', inline: false }
+                )
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    }
+};

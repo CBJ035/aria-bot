@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aria.bot</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>node</string>
+        <string>scripts/daemon.js</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/chris/Documents/GitHub/aria-bot</string>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/chris/Documents/GitHub/aria-bot/logs/daemon.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/chris/Documents/GitHub/aria-bot/logs/daemon.error.log</string>
+    
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <key>LowPriorityIO</key>
+    <true/>
+    
+    <key>Nice</key>
+    <integer>1</integer>
+</dict>
+</plist>

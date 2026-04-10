@@ -1,0 +1,48 @@
+[Unit]
+Description=Aria Discord Music Bot
+Documentation=https://github.com/yourusername/aria-bot
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/aria-bot
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aria-bot
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+Environment=NODE_OPTIONS=--max-old-space-size=512 --optimize-for-size
+
+# Resource limits for Raspberry Pi
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=100
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/pi/aria-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Audio group access
+SupplementaryGroups=audio
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
